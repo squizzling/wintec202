@@ -9,12 +9,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squizzling/wintec202/pkg/wintec202"
-
 	"github.com/stretchr/testify/require"
+
+	"github.com/squizzling/wintec202/pkg/wintec202"
 )
 
-func hexToRaw(s string) io.Reader {
+func hexToReader(s string) io.Reader {
+	return bytes.NewReader(hexToBytes(s))
+}
+
+func hexToBytes(s string) []byte {
 	chars := strings.Split(s, " ")
 	b := bytes.Buffer{}
 	for _, ch := range chars {
@@ -24,7 +28,7 @@ func hexToRaw(s string) io.Reader {
 		}
 		b.WriteByte(byte(i))
 	}
-	return bytes.NewReader(b.Bytes())
+	return b.Bytes()
 }
 
 func TestEmpty(t *testing.T) {
@@ -35,7 +39,7 @@ func TestEmpty(t *testing.T) {
 }
 
 func TestBasicRecord(t *testing.T) {
-	output, err := wintec202.LoadTES(hexToRaw("00 00 E3 C2 CC 46 20 01 FD 11 C0 54 B6 CE 25 00"))
+	output, err := wintec202.LoadTES(hexToReader("00 00 E3 C2 CC 46 20 01 FD 11 C0 54 B6 CE 25 00"))
 	require.NoError(t, err)
 	require.Equal(t, 1, len(output))
 	expected := []wintec202.GPS{
@@ -54,7 +58,7 @@ func TestMultipleRecords(t *testing.T) {
 	data += "00 00 E4 C2 CC 46 00 01 FD 11 C0 54 B6 CE 25 00 "
 	data += "00 00 E5 C2 CC 46 E0 00 FD 11 C0 54 B6 CE 25 00"
 
-	output, err := wintec202.LoadTES(hexToRaw(data))
+	output, err := wintec202.LoadTES(hexToReader(data))
 	require.NoError(t, err)
 	require.Equal(t, 3, len(output))
 	expected := []wintec202.GPS{
@@ -81,7 +85,7 @@ func TestMultipleRecords(t *testing.T) {
 }
 
 func TestExtraData(t *testing.T) {
-	output, err := wintec202.LoadTES(hexToRaw("00 00 E3 C2 CC 46 20 01 FD 11 C0 54 B6 CE 25 00 FF FF"))
+	output, err := wintec202.LoadTES(hexToReader("00 00 E3 C2 CC 46 20 01 FD 11 C0 54 B6 CE 25 00 FF FF"))
 	require.NoError(t, err)
 	require.Equal(t, 1, len(output))
 	expected := []wintec202.GPS{
@@ -96,7 +100,7 @@ func TestExtraData(t *testing.T) {
 }
 
 func TestRecordWithMarker(t *testing.T) {
-	output, err := wintec202.LoadTES(hexToRaw("02 00 E3 C2 CC 46 20 01 FD 11 C0 54 B6 CE 25 00"))
+	output, err := wintec202.LoadTES(hexToReader("02 00 E3 C2 CC 46 20 01 FD 11 C0 54 B6 CE 25 00"))
 	require.NoError(t, err)
 	require.Equal(t, 1, len(output))
 	expected := []wintec202.GPS{
@@ -110,4 +114,33 @@ func TestRecordWithMarker(t *testing.T) {
 		},
 	}
 	require.Equal(t, expected, output)
+}
+
+func TestRoundtrip(t *testing.T) {
+	b := bytes.Buffer{}
+	const i = "02 00 E3 C2 CC 46 20 01 FD 11 C0 54 B6 CE 25 00"
+	output, err := wintec202.LoadTES(hexToReader(i))
+	require.NoError(t, err)
+	err = wintec202.StoreTES(&b, output)
+	require.NoError(t, err)
+	require.EqualValues(t, b.Bytes(), hexToBytes(i))
+}
+
+func TestStoreMarker(t *testing.T) {
+	const markClear = "00 00 E3 C2 CC 46 20 01 FD 11 C0 54 B6 CE 25 00"
+	const markSet = "02 00 E3 C2 CC 46 20 01 FD 11 C0 54 B6 CE 25 00"
+
+	output, err := wintec202.LoadTES(hexToReader(markClear))
+	require.NoError(t, err)
+	output[0].Marker = true
+	b := bytes.Buffer{}
+	err = wintec202.StoreTES(&b, output)
+	require.NoError(t, err)
+	require.EqualValues(t, b.Bytes(), hexToBytes(markSet))
+
+	output[0].Marker = false
+	b = bytes.Buffer{}
+	err = wintec202.StoreTES(&b, output)
+	require.NoError(t, err)
+	require.EqualValues(t, b.Bytes(), hexToBytes(markClear))
 }
